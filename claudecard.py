@@ -8,17 +8,20 @@ meta tag and downloads that file directly.
 
 Built only for Claude pages (claude.com / claude.ai). Other domains are rejected.
 
-Two ways to use it:
+Three ways to use it:
 
-  1. One link:
+  1. Interactive (just run it, then paste a link when asked):
+       python claudecard.py
+
+  2. One link:
        python claudecard.py "https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code"
 
-  2. Hands-free clipboard watch:
+  3. Hands-free clipboard watch:
        python claudecard.py --watch
      Copy any Claude link and the featured image downloads automatically.
      Ctrl+C to stop.
 
-Output: one image per page in ./cards/
+Output: one image per page, saved to your Downloads folder by default
   <slug>.<ext>          e.g. a-harness-for-every-task-...-claude-code.jpg
 """
 
@@ -35,6 +38,9 @@ from playwright.sync_api import sync_playwright, Error as PlaywrightError
 
 ALLOWED_HOSTS = ("claude.com", "claude.ai")
 URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+
+# Images are saved to your Downloads folder by default. Override with -o/--out.
+DEFAULT_OUT = str(Path.home() / "Downloads")
 
 # Meta tags that hold the featured image, in priority order.
 IMAGE_META = [
@@ -142,6 +148,32 @@ def run_once(url: str, out_dir: Path) -> None:
     print(f"Done -> {out_dir.resolve()}")
 
 
+def run_interactive(out_dir: Path) -> None:
+    """Prompt the user to paste a Claude link, then download it. Loops until quit."""
+    print("Paste a Claude link and press Enter. (Press Enter on an empty line or type 'q' to quit.)")
+    print(f"Images save to: {out_dir.resolve()}\n")
+    while True:
+        try:
+            raw = input("Link> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if not raw or raw.lower() in ("q", "quit", "exit"):
+            return
+        match = URL_RE.search(raw)
+        norm = normalize_url(match.group(0) if match else raw)
+        if not norm:
+            print(f"  Not a Claude link (only {' / '.join(ALLOWED_HOSTS)} allowed). Try again.\n",
+                  file=sys.stderr)
+            continue
+        print(f"Fetching {norm}")
+        try:
+            grab(norm, out_dir)
+            print(f"Done -> {out_dir.resolve()}\n")
+        except PlaywrightError as e:
+            print(f"Failed: {e}\n", file=sys.stderr)
+
+
 def run_watch(out_dir: Path) -> None:
     try:
         import pyperclip
@@ -180,17 +212,17 @@ def main() -> None:
     ap.add_argument("url", nargs="?", help="A Claude link (claude.com / claude.ai).")
     ap.add_argument("--watch", action="store_true",
                     help="Auto-download whenever a Claude link is copied.")
-    ap.add_argument("-o", "--out", default="cards", help="Output folder (default: cards).")
+    ap.add_argument("-o", "--out", default=DEFAULT_OUT,
+                    help="Output folder (default: your Downloads folder).")
     args = ap.parse_args()
 
-    out_dir = Path(args.out)
+    out_dir = Path(args.out).expanduser()
     if args.watch:
         run_watch(out_dir)
     elif args.url:
         run_once(args.url, out_dir)
     else:
-        ap.print_help()
-        sys.exit(0)
+        run_interactive(out_dir)
 
 
 if __name__ == "__main__":
