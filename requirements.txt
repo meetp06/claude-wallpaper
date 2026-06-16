@@ -1,0 +1,2 @@
+playwright>=1.44
+pyperclip>=1.8   # only needed for --watch (clipboard) mode
